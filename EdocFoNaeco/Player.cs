@@ -57,6 +57,7 @@ class Player
             int myLife = int.Parse(inputs[2]);
             int oppLife = int.Parse(inputs[3]);
             int torpedoCooldown = int.Parse(inputs[4]);
+            Err($"torpedoCooldown : {torpedoCooldown}");
             int sonarCooldown = int.Parse(inputs[5]);
             int silenceCooldown = int.Parse(inputs[6]);
             int mineCooldown = int.Parse(inputs[7]);
@@ -66,23 +67,32 @@ class Player
             Err($"opponentOrders are: {opponentOrders}");
             CardinalPos oppoenetCardinalMove;
             int surfaceSector;
-            ParseOpponentOrders(opponentOrders, out oppoenetCardinalMove, out surfaceSector);
+            Pos enemyTorpedoPos;
+            ParseOpponentOrders(opponentOrders, out oppoenetCardinalMove, out surfaceSector, out enemyTorpedoPos);
             // Write an action using Console.WriteLine()
             // To debug: Console.Error.WriteLine("Debug messages...");
 
             // Populate enemy tails
-            PopulateEnemyTails(oppoenetCardinalMove, surfaceSector);
+            PopulateEnemyTails(oppoenetCardinalMove, surfaceSector, enemyTorpedoPos);
             Err($"There are {possibleEnemyTails.Count} possible enemy tails left");
             if (possibleEnemyTails.Count == 1)
             {
                 Err($"I KNOW THE ENEMY IS AT {possibleEnemyTails.First().Last()}.");
             }
 
+            // Fire Torpedo
+            if (torpedoCooldown == 0)
+            {
+                var torpedoRange = GetTorpedoRange(new Pos(x, y));
+                var torpedosDamagerange = torpedoRange.Select(t => GetTorpedoDamageRange(t));
+            }
+
+
 
             // Make my move
             var validMoves = map.ValidMoves(new Pos(x, y));
-            Err($"TAIL: {tail.Select(t => t.ToString()).Aggregate((a, b) => a + "," + b)}");
-            Err(validMoves.Select(m => m.ToString()).Aggregate((a, b) => a + "," + b));
+            Err($"TAIL: {tail.Select(t => t.ToString()).Aggregate((a, b) => a + "| " + b)}");
+            Err(validMoves.Select(m => m.ToString()).Aggregate((a, b) => a + "| " + b));
             validMoves = validMoves.Where(m => !tail.Contains(m)).ToList();
             if (!validMoves.Any())
             {
@@ -92,7 +102,7 @@ class Player
             }
             else
             {
-                Err(validMoves.Select(m => m.ToString()).Aggregate((a, b) => a + "," + b));
+                Err(validMoves.Select(m => m.ToString()).Aggregate((a, b) => a + "| " + b));
 
                 Random rand = new Random();
                 var move = validMoves[rand.Next(validMoves.Count)];
@@ -103,11 +113,19 @@ class Player
         }
     }
 
-    private static void PopulateEnemyTails(CardinalPos oppoenetCardinalMove, int surfaceSector)
+    private static void PopulateEnemyTails(CardinalPos oppoenetCardinalMove, int surfaceSector, Pos torpedoPos)
     {
         if (surfaceSector > 0)
         {
             possibleEnemyTails.RemoveAll(t => !map.IsInSector(t.Last(), surfaceSector));
+        }
+
+        if (torpedoPos != null)
+        {
+            List<Pos> torpedoRange = GetTorpedoRange(torpedoPos);
+            Err($"torpedoRange: {torpedoRange.Select(t => t.ToString()).Aggregate((a, b) => a + "| " + b)}");
+            //remove all tails that have the last position outside the torpedo range 
+            possibleEnemyTails.RemoveAll(t => !torpedoRange.Contains(t.Last()));
         }
 
         if (oppoenetCardinalMove == CardinalPos.NA) return;
@@ -119,7 +137,7 @@ class Player
             switch (oppoenetCardinalMove)
             {
                 case CardinalPos.N:
-                    newMove.Y--; 
+                    newMove.Y--;
                     break;
                 case CardinalPos.E:
                     newMove.X++;
@@ -132,7 +150,7 @@ class Player
                     break;
             }
 
-            if(map.IsWaterTile(newMove))
+            if (map.IsWaterTile(newMove))
             {
                 tail.Add(newMove);
             }
@@ -145,10 +163,112 @@ class Player
         possibleEnemyTails.RemoveAll(x => x.Count == 0);
     }
 
-    private static void ParseOpponentOrders(string opponentOrders, out CardinalPos oppoenetCardinalMove, out int surfaceSector)
+    private static List<Pos> GetTorpedoRange(Pos torpedoPos)
+    {
+        var torpedoRange = new List<Pos>();
+
+        var minPos = new Pos(torpedoPos.X - 4, torpedoPos.Y - 4);
+        var maxPos = new Pos(torpedoPos.X + 4, torpedoPos.Y + 4);
+
+        for (int i = 0; i <= 4; i++)
+        {
+            if (i == 0)
+            {
+                torpedoRange.Add(new Pos(minPos.X, torpedoPos.Y));
+
+                torpedoRange.Add(new Pos(maxPos.X, torpedoPos.Y));
+            }
+
+            if (i == 1)
+            {
+                torpedoRange.Add(new Pos(minPos.X + i, torpedoPos.Y - i));
+                torpedoRange.Add(new Pos(minPos.X + i, torpedoPos.Y));
+                torpedoRange.Add(new Pos(minPos.X + i, torpedoPos.Y + i));
+
+                torpedoRange.Add(new Pos(maxPos.X - i, torpedoPos.Y - i));
+                torpedoRange.Add(new Pos(maxPos.X - i, torpedoPos.Y));
+                torpedoRange.Add(new Pos(maxPos.X - i, torpedoPos.Y + i));
+            }
+
+            if (i == 2)
+            {
+                torpedoRange.Add(new Pos(minPos.X + i, torpedoPos.Y - 2));
+                torpedoRange.Add(new Pos(minPos.X + i, torpedoPos.Y - 1));
+                torpedoRange.Add(new Pos(minPos.X + i, torpedoPos.Y));
+                torpedoRange.Add(new Pos(minPos.X + i, torpedoPos.Y + 1));
+                torpedoRange.Add(new Pos(minPos.X + i, torpedoPos.Y + 2));
+
+                torpedoRange.Add(new Pos(maxPos.X - i, torpedoPos.Y - 2));
+                torpedoRange.Add(new Pos(maxPos.X - i, torpedoPos.Y - 1));
+                torpedoRange.Add(new Pos(maxPos.X - i, torpedoPos.Y));
+                torpedoRange.Add(new Pos(maxPos.X - i, torpedoPos.Y + 2));
+                torpedoRange.Add(new Pos(maxPos.X - i, torpedoPos.Y + 1));
+            }
+
+            if (i == 3)
+            {
+                torpedoRange.Add(new Pos(minPos.X + i, torpedoPos.Y - 3));
+                torpedoRange.Add(new Pos(minPos.X + i, torpedoPos.Y - 2));
+                torpedoRange.Add(new Pos(minPos.X + i, torpedoPos.Y - 1));
+                torpedoRange.Add(new Pos(minPos.X + i, torpedoPos.Y));
+                torpedoRange.Add(new Pos(minPos.X + i, torpedoPos.Y + 1));
+                torpedoRange.Add(new Pos(minPos.X + i, torpedoPos.Y + 2));
+                torpedoRange.Add(new Pos(minPos.X + i, torpedoPos.Y + 3));
+
+                torpedoRange.Add(new Pos(maxPos.X - i, torpedoPos.Y - 3));
+                torpedoRange.Add(new Pos(maxPos.X - i, torpedoPos.Y - 2));
+                torpedoRange.Add(new Pos(maxPos.X - i, torpedoPos.Y - 1));
+                torpedoRange.Add(new Pos(maxPos.X - i, torpedoPos.Y));
+                torpedoRange.Add(new Pos(maxPos.X - i, torpedoPos.Y + 1));
+                torpedoRange.Add(new Pos(maxPos.X - i, torpedoPos.Y + 2));
+                torpedoRange.Add(new Pos(maxPos.X - i, torpedoPos.Y + 3));
+            }
+
+            if (i == 4)
+            {
+                torpedoRange.Add(new Pos(minPos.X + i, torpedoPos.Y - 4));
+                torpedoRange.Add(new Pos(minPos.X + i, torpedoPos.Y - 3));
+                torpedoRange.Add(new Pos(minPos.X + i, torpedoPos.Y - 2));
+                torpedoRange.Add(new Pos(minPos.X + i, torpedoPos.Y - 1));
+                torpedoRange.Add(new Pos(minPos.X + i, torpedoPos.Y + 1));
+                torpedoRange.Add(new Pos(minPos.X + i, torpedoPos.Y + 2));
+                torpedoRange.Add(new Pos(minPos.X + i, torpedoPos.Y - 3));
+                torpedoRange.Add(new Pos(minPos.X + i, torpedoPos.Y + 4));
+            }
+        }
+
+        Err($"Torpedo Center: {torpedoPos}");
+        Err($"All torpedoRange: {torpedoRange.Select(t => t.ToString()).Aggregate((a, b) => a + "| " + b)}");
+
+        //remove all tiles not on map and non water tiles
+        torpedoRange.RemoveAll(r => !map.IsPosOnBoard(r) || !map.IsWaterTile(r));
+
+        return torpedoRange;
+    }
+
+    private static List<Pos> GetTorpedoDamageRange(Pos torpado)
+    {
+        var torpedoDamageRange = new List<Pos>();
+        for (int y = torpado.Y-1 ; y <= torpado.Y + 1; y++)
+        {
+            for (int x = torpado.X - 1; x <= torpado.X - 1; x++)
+            {
+                torpedoDamageRange.Add(new Pos(x, y));
+            }
+        }
+        Err($"torpedoDamageRange: {torpedoDamageRange.Select(t => t.ToString()).Aggregate((a, b) => a + " | " + b)}");
+
+        //remove all tiles not on map and non water tiles
+        torpedoDamageRange.RemoveAll(r => !map.IsPosOnBoard(r) || !map.IsWaterTile(r));
+        return torpedoDamageRange;
+    }
+
+    private static void ParseOpponentOrders(string opponentOrders, out CardinalPos oppoenetCardinalMove, out int surfaceSector, out Pos torpedoPos)
     {
         const string MOVE = "MOVE ";
-        const string SURFACE= "SURFACE ";
+        const string SURFACE = "SURFACE ";
+        const string TORPEDO = "TORPEDO ";
+        const string SEPARATOR = "|";
 
         oppoenetCardinalMove = CardinalPos.NA;
         surfaceSector = 0;
@@ -182,6 +302,17 @@ class Player
             Err($"opponentOrders in ParseOpponentOrders: {opponentOrders}");
             surfaceSector = int.Parse(opponentOrders[opponentOrders.IndexOf(SURFACE) + SURFACE.Length].ToString());
             Err($"surfaceSector {surfaceSector}");
+        }
+
+        torpedoPos = null;
+        if (opponentOrders.Contains(TORPEDO))
+        {
+            var startIndex = opponentOrders.IndexOf(TORPEDO) + TORPEDO.Length;
+            var endIndex = opponentOrders.IndexOf(SEPARATOR, startIndex);
+            var stringPos = opponentOrders.Substring(startIndex, endIndex - startIndex);
+
+            Err(stringPos);
+            torpedoPos = new Pos(stringPos);
         }
     }
 
@@ -297,7 +428,7 @@ class Map
         var north = new Pos(pos.X, pos.Y - 1);
         if (IsWaterTile(north)) result.Add(north);
 
-        var east = new Pos(pos.X+1, pos.Y);
+        var east = new Pos(pos.X + 1, pos.Y);
         if (IsWaterTile(east)) result.Add(east);
 
         var south = new Pos(pos.X, pos.Y + 1);
@@ -360,6 +491,13 @@ class Pos : IEquatable<Pos>
     {
         X = x;
         Y = y;
+    }
+
+    public Pos(string pos)
+    {
+        var x = pos.Split(' ');
+        X = int.Parse(x[0]);
+        Y = int.Parse(x[1]);
     }
 
     public int X { get; set; }

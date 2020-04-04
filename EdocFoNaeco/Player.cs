@@ -4,6 +4,7 @@ using System.IO;
 using System.Text;
 using System.Collections;
 using System.Collections.Generic;
+using System.Security.Cryptography;
 
 /**
  * Auto-generated code below aims at helping you parse
@@ -14,6 +15,10 @@ class Player
     public static Map map;
     public static List<Pos> tail = new List<Pos>();
     public static List<List<Pos>> possibleEnemyTails = new List<List<Pos>>();
+    public static List<Pos> PossibleEnemiesHit = null;
+    public static int? PreviousTurnOppLife = null;
+    public static int? CurrentOppLife = null;
+
 
     static void Main(string[] args)
     {
@@ -24,6 +29,7 @@ class Player
         int width = int.Parse(inputs[0]);
         int height = int.Parse(inputs[1]);
         int myId = int.Parse(inputs[2]);
+
         map = new Map(width, height);
 
         for (int i = 0; i < height; i++)
@@ -54,8 +60,9 @@ class Player
             inputs = inputStr.Split(' ');
             int x = int.Parse(inputs[0]);
             int y = int.Parse(inputs[1]);
+            var myPos = new Pos(x, y);
             int myLife = int.Parse(inputs[2]);
-            int oppLife = int.Parse(inputs[3]);
+            CurrentOppLife = int.Parse(inputs[3]);
             int torpedoCooldown = int.Parse(inputs[4]);
             Err($"torpedoCooldown : {torpedoCooldown}");
             int sonarCooldown = int.Parse(inputs[5]);
@@ -81,10 +88,45 @@ class Player
             }
 
             // Fire Torpedo
+            Pos FireTorpedoAt = null;
             if (torpedoCooldown == 0)
             {
                 var torpedoRange = GetTorpedoRange(new Pos(x, y));
-                var torpedosDamagerange = torpedoRange.Select(t => GetTorpedoDamageRange(t));
+                var torpedosDamageRange = torpedoRange.Select(t => new { torp = t, dmg = GetTorpedoDamageRange(t) }).ToList();
+
+                // Remove any torpedoes that would damage me
+                torpedosDamageRange.RemoveAll(t => t.dmg.Contains(myPos));
+
+                var possibleEnemyLocations = possibleEnemyTails.Select(t => t.Last());
+
+                var possibleTargets = torpedosDamageRange.Select(tdr => new { torpedoDamageRange = tdr, enemiesHit = possibleEnemyLocations.Where(e => tdr.dmg.Contains(e)) }).ToList();
+                possibleTargets.RemoveAll(pt => !pt.enemiesHit.Any());
+
+                foreach (var trg in possibleTargets)
+                {
+                    Err($"Torpedo at {trg.torpedoDamageRange.torp} can hit enemies {trg.enemiesHit.Select(a => a.ToString()).Aggregate((a, b) => a + " | " + b)}");
+                }
+
+                if (possibleTargets.Any())
+                {
+                    var hitMostTargets = possibleTargets.Aggregate((a, b) => a.enemiesHit.Count() > b.enemiesHit.Count() ? a : b);
+
+                    //If there is only one enemy to hit try to hit him for 2 damage
+                    if (hitMostTargets.enemiesHit.Count() == 1)
+                    {
+                        hitMostTargets = possibleTargets.Where(pt => pt.torpedoDamageRange.torp == pt.enemiesHit.First()).Single();
+                        Err($"With Torpedo at: {hitMostTargets.torpedoDamageRange.torp}, I can hit enemy {hitMostTargets.enemiesHit.First()} for 2 DMG");
+                        PossibleEnemiesHit = hitMostTargets.enemiesHit.ToList();
+                    }
+                    else
+                    {
+                        Err($"With Torpedo at: {hitMostTargets.torpedoDamageRange.torp}, I can hit {hitMostTargets.enemiesHit.Count()} enemies");
+                        FireTorpedoAt = hitMostTargets.torpedoDamageRange.torp;
+                        PossibleEnemiesHit = hitMostTargets.enemiesHit.ToList();
+                    }
+
+                    
+                }
             }
 
 
@@ -94,9 +136,15 @@ class Player
             Err($"TAIL: {tail.Select(t => t.ToString()).Aggregate((a, b) => a + "| " + b)}");
             Err(validMoves.Select(m => m.ToString()).Aggregate((a, b) => a + "| " + b));
             validMoves = validMoves.Where(m => !tail.Contains(m)).ToList();
+            var fireTorpedoMessage = string.Empty;
+            if (FireTorpedoAt != null)
+            {
+                fireTorpedoMessage = $"TORPEDO {FireTorpedoAt} | ";
+            }
+
             if (!validMoves.Any())
             {
-                Console.WriteLine("SURFACE"); // CAN I ALSO MOVE? 
+                Console.WriteLine($"{fireTorpedoMessage}SURFACE"); // CAN I ALSO MOVE? 
                 tail = new List<Pos>();
                 tail.Add(new Pos(x, y));
             }
@@ -108,8 +156,10 @@ class Player
                 var move = validMoves[rand.Next(validMoves.Count)];
                 tail.Add(move);
                 var cardinal = move.ToCardinal(new Pos(x, y));
-                Console.WriteLine($"MOVE {cardinal} TORPEDO");
+                Console.WriteLine($"{fireTorpedoMessage}MOVE {cardinal} TORPEDO");
             }
+
+            PreviousTurnOppLife = CurrentOppLife;
         }
     }
 
@@ -118,6 +168,7 @@ class Player
         if (surfaceSector > 0)
         {
             possibleEnemyTails.RemoveAll(t => !map.IsInSector(t.Last(), surfaceSector));
+            Err($"After Surface there are: {possibleEnemyTails.Count()} left");
         }
 
         if (torpedoPos != null)
@@ -126,6 +177,24 @@ class Player
             Err($"torpedoRange: {torpedoRange.Select(t => t.ToString()).Aggregate((a, b) => a + "| " + b)}");
             //remove all tails that have the last position outside the torpedo range 
             possibleEnemyTails.RemoveAll(t => !torpedoRange.Contains(t.Last()));
+            Err($"After torpedoPos there are: {possibleEnemyTails.Count()} left");
+
+        }
+
+        // I fired a torpedo, I should have hit one of these. If I did remove all other options. If I didn't remove these options.
+        if (PossibleEnemiesHit != null)
+        {
+            if (CurrentOppLife != null && PreviousTurnOppLife != null && PreviousTurnOppLife != CurrentOppLife)
+            {
+                possibleEnemyTails.RemoveAll(t => !PossibleEnemiesHit.Contains(t.Last()));
+            }
+            else
+            {
+                possibleEnemyTails.RemoveAll(t => PossibleEnemiesHit.Contains(t.Last()));
+            }
+            PossibleEnemiesHit = null;
+            Err($"After PossibleEnemiesHit there are: {possibleEnemyTails.Count()} left");
+
         }
 
         if (oppoenetCardinalMove == CardinalPos.NA) return;
@@ -161,6 +230,8 @@ class Player
         }
 
         possibleEnemyTails.RemoveAll(x => x.Count == 0);
+        Err($"After EnemyMOve there are: {possibleEnemyTails.Count()} left");
+
     }
 
     private static List<Pos> GetTorpedoRange(Pos torpedoPos)
@@ -237,9 +308,6 @@ class Player
             }
         }
 
-        Err($"Torpedo Center: {torpedoPos}");
-        Err($"All torpedoRange: {torpedoRange.Select(t => t.ToString()).Aggregate((a, b) => a + "| " + b)}");
-
         //remove all tiles not on map and non water tiles
         torpedoRange.RemoveAll(r => !map.IsPosOnBoard(r) || !map.IsWaterTile(r));
 
@@ -251,12 +319,11 @@ class Player
         var torpedoDamageRange = new List<Pos>();
         for (int y = torpado.Y-1 ; y <= torpado.Y + 1; y++)
         {
-            for (int x = torpado.X - 1; x <= torpado.X - 1; x++)
+            for (int x = torpado.X - 1; x <= torpado.X + 1; x++)
             {
                 torpedoDamageRange.Add(new Pos(x, y));
             }
         }
-        Err($"torpedoDamageRange: {torpedoDamageRange.Select(t => t.ToString()).Aggregate((a, b) => a + " | " + b)}");
 
         //remove all tiles not on map and non water tiles
         torpedoDamageRange.RemoveAll(r => !map.IsPosOnBoard(r) || !map.IsWaterTile(r));
@@ -298,10 +365,7 @@ class Player
 
         if (opponentOrders.Contains(SURFACE))
         {
-            Err($"opponentOrders.IndexOf(SURFACE) + SURFACE.Length: {opponentOrders.IndexOf(SURFACE) + SURFACE.Length}");
-            Err($"opponentOrders in ParseOpponentOrders: {opponentOrders}");
             surfaceSector = int.Parse(opponentOrders[opponentOrders.IndexOf(SURFACE) + SURFACE.Length].ToString());
-            Err($"surfaceSector {surfaceSector}");
         }
 
         torpedoPos = null;
@@ -469,14 +533,15 @@ class Map
     internal bool IsInSector(Pos pos, int sectorNumber)
     {
         Sector sector = GetSector(sectorNumber);
-
+        bool result = false;
         if (pos.X >= sector.MinPos.X && pos.X <= sector.MaxPos.X &&
             pos.Y >= sector.MinPos.Y && pos.Y <= sector.MaxPos.Y)
         {
-            return true;
+            result = true;
         }
 
-        return false;
+        Console.Error.WriteLine($"Pos: '{pos}' is in sector {sectorNumber}? {result}");
+        return result;
     }
 
     private Sector GetSector(int sectorNumber)

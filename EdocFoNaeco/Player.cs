@@ -5,6 +5,7 @@ using System.Text;
 using System.Collections;
 using System.Collections.Generic;
 using System.Security.Cryptography;
+using System.Diagnostics;
 
 /**
  * Auto-generated code below aims at helping you parse
@@ -18,10 +19,14 @@ class Player
     public static List<Pos> PossibleEnemiesHit = null;
     public static int? PreviousTurnOppLife = null;
     public static int? CurrentOppLife = null;
+    public static Stopwatch Timer = new Stopwatch();
+    public static Stopwatch Timer2 = new Stopwatch();
 
 
     static void Main(string[] args)
     {
+        
+
         var inputStr = "";
         string[] inputs;
         inputStr = Console.ReadLine();
@@ -54,9 +59,10 @@ class Player
         // game loop
         while (true)
         {
-
+            Timer2.Restart();
+            Timer.Restart();
             inputStr = Console.ReadLine();
-            Err(inputStr);
+            //Err(inputStr);
             inputs = inputStr.Split(' ');
             int x = int.Parse(inputs[0]);
             int y = int.Parse(inputs[1]);
@@ -64,24 +70,29 @@ class Player
             int myLife = int.Parse(inputs[2]);
             CurrentOppLife = int.Parse(inputs[3]);
             int torpedoCooldown = int.Parse(inputs[4]);
-            Err($"torpedoCooldown : {torpedoCooldown}");
+            //Err($"torpedoCooldown : {torpedoCooldown}");
             int sonarCooldown = int.Parse(inputs[5]);
             int silenceCooldown = int.Parse(inputs[6]);
             int mineCooldown = int.Parse(inputs[7]);
             string sonarResult = Console.ReadLine();
-            Err(sonarResult);
+            //Err(sonarResult);
             string opponentOrders = Console.ReadLine(); // MOVE N |TORPEDO 3 5
-            Err($"opponentOrders are: {opponentOrders}");
+            //Err($"opponentOrders are: {opponentOrders}");
             CardinalPos oppoenetCardinalMove;
             int surfaceSector;
             Pos enemyTorpedoPos;
+
+            TimerLogAndReset("ReadAllInput");
+
             ParseOpponentOrders(opponentOrders, out oppoenetCardinalMove, out surfaceSector, out enemyTorpedoPos);
             // Write an action using Console.WriteLine()
             // To debug: Console.Error.WriteLine("Debug messages...");
-
+            
             // Populate enemy tails
             PopulateEnemyTails(oppoenetCardinalMove, surfaceSector, enemyTorpedoPos);
-            Err($"There are {possibleEnemyTails.Count} possible enemy tails left");
+            TimerLogAndReset("PopulateEnemyTails");
+
+            //Err($"There are {possibleEnemyTails.Count} possible enemy tails left");
             if (possibleEnemyTails.Count == 1)
             {
                 Err($"I KNOW THE ENEMY IS AT {possibleEnemyTails.First().Last()}.");
@@ -102,39 +113,42 @@ class Player
                 var possibleTargets = torpedosDamageRange.Select(tdr => new { torpedoDamageRange = tdr, enemiesHit = possibleEnemyLocations.Where(e => tdr.dmg.Contains(e)) }).ToList();
                 possibleTargets.RemoveAll(pt => !pt.enemiesHit.Any());
 
-                foreach (var trg in possibleTargets)
-                {
-                    Err($"Torpedo at {trg.torpedoDamageRange.torp} can hit enemies {trg.enemiesHit.Select(a => a.ToString()).Aggregate((a, b) => a + " | " + b)}");
-                }
+                //foreach (var trg in possibleTargets)
+                //{
+                //    Err($"Torpedo at {trg.torpedoDamageRange.torp} can hit enemies {trg.enemiesHit.Select(a => a.ToString()).Aggregate((a, b) => a + " | " + b)}");
+                //}
 
                 if (possibleTargets.Any())
                 {
+                    ////If there is only one enemy to hit try to hit him for 2 damage
+                    //if (possibleTargets.All(pt => possibleTargets.First().enemiesHit.First() == pt.enemiesHit.First()))
+                    //{
+                    //    var hitMostTargets = possibleTargets.Where(pt => pt.torpedoDamageRange.torp == pt.enemiesHit.First()).Single();
+                    //    //Err($"With Torpedo at: {hitMostTargets.torpedoDamageRange.torp}, I can hit enemy {hitMostTargets.enemiesHit.First()} for 2 DMG");
+                    //    FireTorpedoAt = hitMostTargets.torpedoDamageRange.torp;
+                    //    PossibleEnemiesHit = hitMostTargets.enemiesHit.ToList();
+                    //} 
+                    //else
+                    //{
+                    //    var hitMostTargets = possibleTargets.Aggregate((a, b) => a.enemiesHit.Count() > b.enemiesHit.Count() ? a : b);
+                    //    //Err($"With Torpedo at: {hitMostTargets.torpedoDamageRange.torp}, I can hit {hitMostTargets.enemiesHit.Count()} enemies");
+                    //    FireTorpedoAt = hitMostTargets.torpedoDamageRange.torp;
+                    //    PossibleEnemiesHit = hitMostTargets.enemiesHit.ToList();
+                    //}
+
                     var hitMostTargets = possibleTargets.Aggregate((a, b) => a.enemiesHit.Count() > b.enemiesHit.Count() ? a : b);
-
-                    //If there is only one enemy to hit try to hit him for 2 damage
-                    if (hitMostTargets.enemiesHit.Count() == 1)
-                    {
-                        hitMostTargets = possibleTargets.Where(pt => pt.torpedoDamageRange.torp == pt.enemiesHit.First()).Single();
-                        Err($"With Torpedo at: {hitMostTargets.torpedoDamageRange.torp}, I can hit enemy {hitMostTargets.enemiesHit.First()} for 2 DMG");
-                        PossibleEnemiesHit = hitMostTargets.enemiesHit.ToList();
-                    }
-                    else
-                    {
-                        Err($"With Torpedo at: {hitMostTargets.torpedoDamageRange.torp}, I can hit {hitMostTargets.enemiesHit.Count()} enemies");
-                        FireTorpedoAt = hitMostTargets.torpedoDamageRange.torp;
-                        PossibleEnemiesHit = hitMostTargets.enemiesHit.ToList();
-                    }
-
-                    
+                    //Err($"With Torpedo at: {hitMostTargets.torpedoDamageRange.torp}, I can hit {hitMostTargets.enemiesHit.Count()} enemies");
+                    FireTorpedoAt = hitMostTargets.torpedoDamageRange.torp;
+                    PossibleEnemiesHit = hitMostTargets.enemiesHit.ToList();
                 }
             }
 
-
+            TimerLogAndReset("FireTorpedoLogic");
 
             // Make my move
             var validMoves = map.ValidMoves(new Pos(x, y));
-            Err($"TAIL: {tail.Select(t => t.ToString()).Aggregate((a, b) => a + "| " + b)}");
-            Err(validMoves.Select(m => m.ToString()).Aggregate((a, b) => a + "| " + b));
+            //Err($"TAIL: {tail.Select(t => t.ToString()).Aggregate((a, b) => a + "| " + b)}");
+            //Err(validMoves.Select(m => m.ToString()).Aggregate((a, b) => a + "| " + b));
             validMoves = validMoves.Where(m => !tail.Contains(m)).ToList();
             var fireTorpedoMessage = string.Empty;
             if (FireTorpedoAt != null)
@@ -150,7 +164,7 @@ class Player
             }
             else
             {
-                Err(validMoves.Select(m => m.ToString()).Aggregate((a, b) => a + "| " + b));
+                //Err(validMoves.Select(m => m.ToString()).Aggregate((a, b) => a + "| " + b));
 
                 Random rand = new Random();
                 var move = validMoves[rand.Next(validMoves.Count)];
@@ -160,6 +174,8 @@ class Player
             }
 
             PreviousTurnOppLife = CurrentOppLife;
+            TimerLogAndReset("MakeMoveLogic");
+            Err($"Turn exec time {Timer2.ElapsedMilliseconds}ms.");
         }
     }
 
@@ -168,16 +184,16 @@ class Player
         if (surfaceSector > 0)
         {
             possibleEnemyTails.RemoveAll(t => !map.IsInSector(t.Last(), surfaceSector));
-            Err($"After Surface there are: {possibleEnemyTails.Count()} left");
+            //Err($"After Surface there are: {possibleEnemyTails.Count()} left");
         }
 
         if (torpedoPos != null)
         {
             List<Pos> torpedoRange = GetTorpedoRange(torpedoPos);
-            Err($"torpedoRange: {torpedoRange.Select(t => t.ToString()).Aggregate((a, b) => a + "| " + b)}");
+            //Err($"torpedoRange: {torpedoRange.Select(t => t.ToString()).Aggregate((a, b) => a + "| " + b)}");
             //remove all tails that have the last position outside the torpedo range 
             possibleEnemyTails.RemoveAll(t => !torpedoRange.Contains(t.Last()));
-            Err($"After torpedoPos there are: {possibleEnemyTails.Count()} left");
+            //Err($"After torpedoPos there are: {possibleEnemyTails.Count()} left");
 
         }
 
@@ -193,7 +209,7 @@ class Player
                 possibleEnemyTails.RemoveAll(t => PossibleEnemiesHit.Contains(t.Last()));
             }
             PossibleEnemiesHit = null;
-            Err($"After PossibleEnemiesHit there are: {possibleEnemyTails.Count()} left");
+            //Err($"After PossibleEnemiesHit there are: {possibleEnemyTails.Count()} left");
 
         }
 
@@ -230,7 +246,7 @@ class Player
         }
 
         possibleEnemyTails.RemoveAll(x => x.Count == 0);
-        Err($"After EnemyMOve there are: {possibleEnemyTails.Count()} left");
+        //Err($"After EnemyMOve there are: {possibleEnemyTails.Count()} left");
 
     }
 
@@ -343,7 +359,7 @@ class Player
         if (opponentOrders.Contains(MOVE))
         {
             var strOppoenetCardinalMove = opponentOrders[opponentOrders.IndexOf(MOVE) + MOVE.Length];
-            Err($"strOppoenetCardinalMove: {strOppoenetCardinalMove}");
+            //Err($"strOppoenetCardinalMove: {strOppoenetCardinalMove}");
             switch (strOppoenetCardinalMove)
             {
                 case 'N':
@@ -373,16 +389,25 @@ class Player
         {
             var startIndex = opponentOrders.IndexOf(TORPEDO) + TORPEDO.Length;
             var endIndex = opponentOrders.IndexOf(SEPARATOR, startIndex);
+            if (endIndex < startIndex) endIndex = opponentOrders.Length;
             var stringPos = opponentOrders.Substring(startIndex, endIndex - startIndex);
 
-            Err(stringPos);
+            //Err(stringPos);
             torpedoPos = new Pos(stringPos);
         }
+
+        TimerLogAndReset("ParseOpponentOrders");
     }
 
     private static void Err(string msg)
     {
         Console.Error.WriteLine(msg);
+    }
+
+    private static void TimerLogAndReset(string methodName)
+    {
+        Err($"{methodName} duration {Timer.ElapsedMilliseconds}ms.");
+        Timer.Restart();
     }
 }
 

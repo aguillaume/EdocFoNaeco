@@ -93,11 +93,9 @@ class Player
             PopulateEnemyTails(oppoenetCardinalMove, surfaceSector, enemyTorpedoPos, enemySilencedMove);
             TimerLogAndReset("PopulateEnemyTails");
 
-            //Err($"There are {possibleEnemyTails.Count} possible enemy tails left");
-            if (possibleEnemyTails.Count == 1)
-            {
-                Err($"I KNOW THE ENEMY IS AT {possibleEnemyTails.First().Last()}.");
-            }
+            Err((possibleEnemyTails.Count == 1) ? 
+                $"I KNOW THE ENEMY IS AT {possibleEnemyTails.First().Last()}." :
+                $"There are {possibleEnemyTails.Count} possible enemy tails left");
 
             // Fire Torpedo
             Pos FireTorpedoAt = null;
@@ -184,12 +182,11 @@ class Player
     {
         if (enemySilencedMove)
         {
-            Err($"PopulateEnemyTails before SILENCE possibleEnemyTails count: {possibleEnemyTails.Count}");
             var newTails = new List<List<Pos>>();
             foreach (var tail in possibleEnemyTails)
             {
                 var lastPos = tail.Last();
-                var silenceRance = GetTorpedoRange(lastPos);
+                var silenceRance = GetSilenceRange(lastPos, tail);
                 foreach (var pos in silenceRance)
                 {
                     var newTail = tail.Select(x => x).ToList(); //copy tail
@@ -199,7 +196,6 @@ class Player
             }
 
             possibleEnemyTails = newTails;
-            Err($"PopulateEnemyTails after SILENCE possibleEnemyTails count: {possibleEnemyTails.Count}");
         }
 
         if (surfaceSector > 0)
@@ -269,6 +265,57 @@ class Player
         possibleEnemyTails.RemoveAll(x => x.Count == 0);
         //Err($"After EnemyMOve there are: {possibleEnemyTails.Count()} left");
 
+    }
+
+    private static List<Pos> GetSilenceRange(Pos lastPos, List<Pos> tail)
+    {
+        var silenceRange = new List<Pos>();
+
+        //north
+        for (int i = 1; i <= 4; i++)
+        {
+            var pos = new Pos(lastPos.X, lastPos.Y+i);
+            if (map.IsPosOnBoard(pos) && map.IsWaterTile(pos) && !tail.Contains(pos))
+            {
+                silenceRange.Add(pos);
+                break;
+            }
+        }
+
+        //East
+        for (int i = 1; i <= 4; i++)
+        {
+            var pos = new Pos(lastPos.X+i, lastPos.Y);
+            if (map.IsPosOnBoard(pos) && map.IsWaterTile(pos) && !tail.Contains(pos))
+            {
+                silenceRange.Add(pos);
+                break;
+            }
+        }
+
+        //South
+        for (int i = 1; i <= 4; i++)
+        {
+            var pos = new Pos(lastPos.X, lastPos.Y-i);
+            if (map.IsPosOnBoard(pos) && map.IsWaterTile(pos) && !tail.Contains(pos))
+            {
+                silenceRange.Add(pos);
+                break;
+            }
+        }
+
+        //West
+        for (int i = 1; i <= 4; i++)
+        {
+            var pos = new Pos(lastPos.X-i, lastPos.Y);
+            if (map.IsPosOnBoard(pos) && map.IsWaterTile(pos) && !tail.Contains(pos))
+            {
+                silenceRange.Add(pos);
+                break;
+            }
+        }
+
+        return silenceRange;
     }
 
     private static List<Pos> GetTorpedoRange(Pos torpedoPos)
@@ -594,7 +641,6 @@ class Map
             result = true;
         }
 
-        Console.Error.WriteLine($"Pos: '{pos}' is in sector {sectorNumber}? {result}");
         return result;
     }
 

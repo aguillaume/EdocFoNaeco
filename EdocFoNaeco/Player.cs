@@ -81,15 +81,16 @@ class Player
             CardinalPos oppoenetCardinalMove;
             int surfaceSector;
             Pos enemyTorpedoPos;
+            bool enemySilencedMove;
 
             TimerLogAndReset("ReadAllInput");
 
-            ParseOpponentOrders(opponentOrders, out oppoenetCardinalMove, out surfaceSector, out enemyTorpedoPos);
+            ParseOpponentOrders(opponentOrders, out oppoenetCardinalMove, out surfaceSector, out enemyTorpedoPos, out enemySilencedMove);
             // Write an action using Console.WriteLine()
             // To debug: Console.Error.WriteLine("Debug messages...");
             
             // Populate enemy tails
-            PopulateEnemyTails(oppoenetCardinalMove, surfaceSector, enemyTorpedoPos);
+            PopulateEnemyTails(oppoenetCardinalMove, surfaceSector, enemyTorpedoPos, enemySilencedMove);
             TimerLogAndReset("PopulateEnemyTails");
 
             //Err($"There are {possibleEnemyTails.Count} possible enemy tails left");
@@ -179,8 +180,28 @@ class Player
         }
     }
 
-    private static void PopulateEnemyTails(CardinalPos oppoenetCardinalMove, int surfaceSector, Pos torpedoPos)
+    private static void PopulateEnemyTails(CardinalPos oppoenetCardinalMove, int surfaceSector, Pos torpedoPos, bool enemySilencedMove)
     {
+        if (enemySilencedMove)
+        {
+            Err($"PopulateEnemyTails before SILENCE possibleEnemyTails count: {possibleEnemyTails.Count}");
+            var newTails = new List<List<Pos>>();
+            foreach (var tail in possibleEnemyTails)
+            {
+                var lastPos = tail.Last();
+                var silenceRance = GetTorpedoRange(lastPos);
+                foreach (var pos in silenceRance)
+                {
+                    var newTail = tail.Select(x => x).ToList(); //copy tail
+                    newTail.Add(pos);
+                    newTails.Add(newTail);
+                }
+            }
+
+            possibleEnemyTails = newTails;
+            Err($"PopulateEnemyTails after SILENCE possibleEnemyTails count: {possibleEnemyTails.Count}");
+        }
+
         if (surfaceSector > 0)
         {
             possibleEnemyTails.RemoveAll(t => !map.IsInSector(t.Last(), surfaceSector));
@@ -346,15 +367,23 @@ class Player
         return torpedoDamageRange;
     }
 
-    private static void ParseOpponentOrders(string opponentOrders, out CardinalPos oppoenetCardinalMove, out int surfaceSector, out Pos torpedoPos)
+    private static void ParseOpponentOrders(string opponentOrders, out CardinalPos oppoenetCardinalMove, 
+        out int surfaceSector, out Pos torpedoPos, out bool silence)
     {
         const string MOVE = "MOVE ";
         const string SURFACE = "SURFACE ";
         const string TORPEDO = "TORPEDO ";
         const string SEPARATOR = "|";
+        const string SILENCE = "SILENCE";
 
         oppoenetCardinalMove = CardinalPos.NA;
         surfaceSector = 0;
+        silence = false;
+
+        if (opponentOrders.Contains(SILENCE))
+        {
+            silence = true;
+        }
 
         if (opponentOrders.Contains(MOVE))
         {
@@ -610,7 +639,7 @@ class Pos : IEquatable<Pos>
         if (currnetPos.Y + 1 == Y && currnetPos.X == X) return "S";
         if (currnetPos.X - 1 == X && currnetPos.Y == Y) return "W";
 
-        throw new Exception($"ToCardinal count not be calcualted for {this} with currentPos {currnetPos}");
+        throw new Exception($"ToCardinal count not be calculated for {this} with currentPos {currnetPos}");
     }
 }
 

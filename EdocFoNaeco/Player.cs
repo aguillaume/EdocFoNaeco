@@ -91,6 +91,7 @@ class Player
             
             // Populate enemy tails
             PopulateEnemyTails(oppoenetCardinalMove, surfaceSector, enemyTorpedoPos, enemySilencedMove);
+            Err($"ENEMY TAILS ENDS {possibleEnemyTails.Select(t => t.Last().ToString()).Aggregate((a, b) => a + " | " + b)}");
             TimerLogAndReset("PopulateEnemyTails");
 
             Err((possibleEnemyTails.Count == 1) ? 
@@ -164,9 +165,21 @@ class Player
             else
             {
                 //Err(validMoves.Select(m => m.ToString()).Aggregate((a, b) => a + "| " + b));
+                Pos move = null;
+                if (possibleEnemyTails.Count == 1)
+                {
+                    AStarPathFiner pathFiner = new AStarPathFiner();
+                    var path = pathFiner.FindPath(map, tail, myPos, possibleEnemyTails.First().Last());
+                    move = path.FirstOrDefault();
 
-                Random rand = new Random();
-                var move = validMoves[rand.Next(validMoves.Count)];
+                    Err($"AStarPathFiner Path {path.Select(m => m.ToString()).Aggregate((a, b) => a + " | " + b)}");
+                }
+                else
+                {
+                    Random rand = new Random();
+                    move = validMoves[rand.Next(validMoves.Count)];
+                }
+
                 tail.Add(move);
                 var cardinal = move.ToCardinal(new Pos(x, y));
                 Console.WriteLine($"{fireTorpedoMessage}MOVE {cardinal} TORPEDO");
@@ -189,9 +202,12 @@ class Player
                 var silenceRance = GetSilenceRange(lastPos, tail);
                 foreach (var pos in silenceRance)
                 {
-                    var newTail = tail.Select(x => x).ToList(); //copy tail
-                    newTail.Add(pos);
-                    newTails.Add(newTail);
+                    if(!newTails.Where(p => p.Last() == pos).Any())
+                    {
+                        var newTail = tail.Select(x => x).ToList(); //copy tail
+                        newTail.Add(pos);
+                        newTails.Add(newTail);
+                    }
                 }
             }
 
@@ -699,4 +715,145 @@ enum Tile
 {
     Water,
     Island
+}
+
+class AStarPathFiner
+{
+    Dictionary<Pos, bool> _closedSet = new Dictionary<Pos, bool>();
+    Dictionary<Pos, bool> _openSet = new Dictionary<Pos, bool>();
+
+    //cost of start to this key node
+    Dictionary<Pos, int> _gScore = new Dictionary<Pos, int>();
+    //cost of start to goal, passing through key node
+    Dictionary<Pos, int> _fScore = new Dictionary<Pos, int>();
+
+    Dictionary<Pos, Pos> _nodeLinks = new Dictionary<Pos, Pos>();
+
+    public List<Pos> FindPath(Map map, List<Pos> tail, Pos start, Pos goal)
+    {
+        _openSet[start] = true;
+        _gScore[start] = 0;
+        _fScore[start] = Heuristic(start, goal);
+        Stopwatch timer = new Stopwatch();
+        while (_openSet.Count > 0)
+        {
+            if (!timer.IsRunning)
+            {
+                timer.Start();
+            }
+            Console.Error.WriteLine($"Duration {timer.ElapsedMilliseconds}ms.");
+            Console.Error.WriteLine($"FindPath: {_openSet.Count}");
+            var current = NextBest();
+            if (current.Equals(goal))
+            {
+                return Reconstruct(current);
+            }
+
+            _openSet.Remove(current);
+            _closedSet[current] = true;
+
+            var neighbors = Neighbors(map, tail, current);
+            Console.Error.WriteLine($"FindPath neighbors: {neighbors.Select(x => x.ToString()).Aggregate((a,b)=> a + " | " + b )}");
+
+            foreach (var neighbor in neighbors)
+            {
+
+                if (_closedSet.ContainsKey(neighbor))
+                    continue;
+
+                var projectedG = GetGScore(current) + 1;
+
+                if (!_openSet.ContainsKey(neighbor))
+                    _openSet[neighbor] = true;
+                else if (projectedG >= GetGScore(neighbor))
+                    continue;
+
+                //record it
+                _nodeLinks[neighbor] = current;
+                _gScore[neighbor] = projectedG;
+                _fScore[neighbor] = projectedG + Heuristic(neighbor, goal);
+
+            }
+        }
+
+        return new List<Pos>();
+    }
+
+    private int Heuristic(Pos start, Pos goal)
+    {
+        var dx = goal.X - start.X;
+        var dy = goal.Y - start.Y;
+        return Math.Abs(dx) + Math.Abs(dy);
+    }
+
+    private int GetGScore(Pos pt)
+    {
+        int score = int.MaxValue;
+        _gScore.TryGetValue(pt, out score);
+        return score;
+    }
+
+
+    private int GetFScore(Pos pt)
+    {
+        int score = int.MaxValue;
+        _fScore.TryGetValue(pt, out score);
+        return score;
+    }
+
+    public static IEnumerable<Pos> Neighbors(Map map, List<Pos> tail, Pos center)
+    {
+        //North
+        Pos pt = new Pos(center.X, center.Y + 1);
+        if (IsValidNeighbor(map, tail, pt))
+            yield return pt;
+        //East
+        pt = new Pos(center.X+1, center.Y);
+        if (IsValidNeighbor(map, tail, pt))
+            yield return pt;
+        //South
+        pt = new Pos(center.X, center.Y - 1);
+        if (IsValidNeighbor(map, tail, pt))
+            yield return pt;
+        //West
+        pt = new Pos(center.X - 1, center.Y);
+        if (IsValidNeighbor(map, tail, pt))
+            yield return pt;
+    }
+
+    public static bool IsValidNeighbor(Map map, List<Pos> tail, Pos pt)
+    {
+        return map.IsPosOnBoard(pt) && map.IsWaterTile(pt) && !tail.Contains(pt);
+    }
+
+    private List<Pos> Reconstruct(Pos current)
+    {
+        List<Pos> path = new List<Pos>();
+        while (_nodeLinks.ContainsKey(current))
+        {
+            path.Add(current);
+            current = _nodeLinks[current];
+        }
+
+        path.Reverse();
+        return path;
+    }
+
+    private Pos NextBest()
+    {
+        int best = int.MaxValue;
+        Pos bestPt = null;
+        foreach (var node in _openSet.Keys)
+        {
+            var score = GetFScore(node);
+            if (score < best)
+            {
+                bestPt = node;
+                best = score;
+            }
+        }
+
+        return bestPt;
+    }
+
 }

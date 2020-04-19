@@ -1,17 +1,14 @@
 ﻿using System;
-using System.Linq;
-using System.IO;
-using System.Text;
-using System.Collections;
 using System.Collections.Generic;
-using System.Security.Cryptography;
 using System.Diagnostics;
+using System.Linq;
+using System.Text;
 
 /**
  * Auto-generated code below aims at helping you parse
  * the standard input according to the problem statement.
  **/
-class Player
+public class Player
 {
     public static Map map;
     public static List<Pos> tail = new List<Pos>();
@@ -21,6 +18,7 @@ class Player
     public static int? CurrentOppLife = null;
     public static Stopwatch Timer = new Stopwatch();
     public static Stopwatch Timer2 = new Stopwatch();
+    public static Random rand;
 
 
     static void Main(string[] args)
@@ -43,6 +41,7 @@ class Player
             map.PopulateMap(i, line);
         }
         Err(map.ToString());
+        rand = new Random(map.GetAllValidPos().Count());
         // Write an action using Console.WriteLine()
         // To debug: Console.Error.WriteLine("Debug messages...");
 
@@ -88,12 +87,13 @@ class Player
             ParseOpponentOrders(opponentOrders, out oppoenetCardinalMove, out surfaceSector, out enemyTorpedoPos, out enemySilencedMove);
             // Write an action using Console.WriteLine()
             // To debug: Console.Error.WriteLine("Debug messages...");
-            
+
             // Populate enemy tails
             PopulateEnemyTails(oppoenetCardinalMove, surfaceSector, enemyTorpedoPos, enemySilencedMove);
+            if (possibleEnemyTails.Any()) Err($"ENEMY TAILS ENDS {possibleEnemyTails.Select(t => t.Last().ToString()).Aggregate((a, b) => a + " | " + b)}");
             TimerLogAndReset("PopulateEnemyTails");
 
-            Err((possibleEnemyTails.Count == 1) ? 
+            Err((possibleEnemyTails.Count == 1) ?
                 $"I KNOW THE ENEMY IS AT {possibleEnemyTails.First().Last()}." :
                 $"There are {possibleEnemyTails.Count} possible enemy tails left");
 
@@ -145,10 +145,7 @@ class Player
             TimerLogAndReset("FireTorpedoLogic");
 
             // Make my move
-            var validMoves = map.ValidMoves(new Pos(x, y));
-            //Err($"TAIL: {tail.Select(t => t.ToString()).Aggregate((a, b) => a + "| " + b)}");
-            //Err(validMoves.Select(m => m.ToString()).Aggregate((a, b) => a + "| " + b));
-            validMoves = validMoves.Where(m => !tail.Contains(m)).ToList();
+            List<Pos> validMoves = GetValidMoves(myPos);
             var fireTorpedoMessage = string.Empty;
             if (FireTorpedoAt != null)
             {
@@ -164,9 +161,22 @@ class Player
             else
             {
                 //Err(validMoves.Select(m => m.ToString()).Aggregate((a, b) => a + "| " + b));
+                Pos move = null;
+                if (possibleEnemyTails.Count == 1)
+                {
+                    AStarPathFiner pathFiner = new AStarPathFiner();
+                    var path = pathFiner.FindPath(map, tail, myPos, possibleEnemyTails.First().Last());
+                    move = path.FirstOrDefault();
 
-                Random rand = new Random();
-                var move = validMoves[rand.Next(validMoves.Count)];
+                    if (path.Any()) Err($"AStarPathFiner Path {path.Select(m => m.ToString()).Aggregate((a, b) => a + " | " + b)}");
+                }
+
+                if (move == null)
+                {
+                    //move = validMoves[rand.Next(validMoves.Count)];
+                    move = Move(validMoves);
+                }
+
                 tail.Add(move);
                 var cardinal = move.ToCardinal(new Pos(x, y));
                 Console.WriteLine($"{fireTorpedoMessage}MOVE {cardinal} TORPEDO");
@@ -176,6 +186,74 @@ class Player
             TimerLogAndReset("MakeMoveLogic");
             Err($"Turn exec time {Timer2.ElapsedMilliseconds}ms.");
         }
+    }
+
+    private static List<Pos> GetValidMoves(Pos pos)
+    {
+        return GetValidMoves(pos, tail);
+    }
+
+    private static List<Pos> GetValidMoves(Pos pos, List<Pos> tail)
+    {
+        var validMoves = map.ValidMoves(pos);
+        //Err($"TAIL: {tail.Select(t => t.ToString()).Aggregate((a, b) => a + "| " + b)}");
+        //Err(validMoves.Select(m => m.ToString()).Aggregate((a, b) => a + "| " + b));
+        validMoves = validMoves.Where(m => !tail.Contains(m)).ToList();
+        return validMoves;
+    }
+
+    private static Pos Move(List<Pos> validMoves)
+    {
+        Dictionary<Pos, int> movesAndScores = GetMoveScores(validMoves, 3, tail);
+
+        Err($"Move Best Moves: {movesAndScores.Select(m => $"P[{m.Key}] V:{m.Value} ").Aggregate((a, b) => a + b)}");
+
+        // Choose move based on score and previous direction.
+        var highestScore = movesAndScores.Max(m => m.Value);
+        var bestMoves = movesAndScores.Where(m => m.Value == highestScore);
+        if (bestMoves.Count() > 1 && tail.Count > 1)
+        {
+            var lastMoveDirection = GetMoveDirection(tail.Last(), tail.ElementAt(tail.Count - 2));
+            var futureMoveDirection = GetMoveDirection(bestMoves.First().Key, tail.Last());
+            if (lastMoveDirection == futureMoveDirection)
+            {
+                return bestMoves.Last().Key;
+            }
+        }
+        return bestMoves.First().Key;
+    }
+
+    private static Dictionary<Pos, int> GetMoveScores(List<Pos> validMoves, int depth, List<Pos> tail)
+    {
+        Dictionary<Pos, int> movesAndScores = new Dictionary<Pos, int>();
+        foreach (var move in validMoves)
+        {
+            var tempTail = tail.Select(x => x).ToList();
+            tempTail.Add(move);
+            var newValidMoves = GetValidMoves(move, tempTail);
+            movesAndScores[move] = newValidMoves.Count;
+            if (depth > 1)
+            {
+                var scores = GetMoveScores(newValidMoves, depth - 1, tempTail);
+                //if(scores.Count > 1) Err($"GetMoveScores Scores: {scores.Select(m => $"P[{m.Key}] V:{m.Value} ").Aggregate((a, b) => a + b)}");
+                var totalScore = scores.Sum(s => s.Value);
+                movesAndScores[move] += totalScore;
+            }
+        }
+
+        return movesAndScores;
+    }
+
+    private static string GetMoveDirection(Pos to, Pos from)
+    {
+        var directionX = from.X - to.X;
+        var directionY = from.Y - to.Y;
+        if (directionX > 0) return "W";
+        if (directionX < 0) return "E";
+        if (directionY > 0) return "N";
+        if (directionY < 0) return "S";
+
+        throw new Exception($"To: {to} & from: {from} are not valid to and from moves");
     }
 
     private static void PopulateEnemyTails(CardinalPos oppoenetCardinalMove, int surfaceSector, Pos torpedoPos, bool enemySilencedMove)
@@ -189,9 +267,12 @@ class Player
                 var silenceRance = GetSilenceRange(lastPos, tail);
                 foreach (var pos in silenceRance)
                 {
-                    var newTail = tail.Select(x => x).ToList(); //copy tail
-                    newTail.Add(pos);
-                    newTails.Add(newTail);
+                    if(!newTails.Where(p => p.Last() == pos).Any())
+                    {
+                        var newTail = tail.Select(x => x).ToList(); //copy tail
+                        newTail.Add(pos);
+                        newTails.Add(newTail);
+                    }
                 }
             }
 
@@ -492,7 +573,7 @@ internal enum CardinalPos
     NA, N, E, S, W
 }
 
-class Map
+public class Map
 {
     public int Width { get; set; }
     public int Height { get; set; }
@@ -582,7 +663,7 @@ class Map
     {
         var waterTiles = GetAllValidPos().ToList();
 
-        Random rand = new Random();
+        Random rand = new Random(waterTiles.Count);
         return waterTiles[rand.Next(waterTiles.Count)];
     }
 
@@ -650,7 +731,7 @@ class Map
     }
 }
 
-class Pos : IEquatable<Pos>
+public class Pos : IEquatable<Pos>
 {
     public Pos(int x, int y)
     {
@@ -673,9 +754,53 @@ class Pos : IEquatable<Pos>
         return $"{X} {Y}";
     }
 
+    public override bool Equals(object obj)
+    {
+        return Equals(obj as Pos);
+    }
+
     public bool Equals(Pos other)
     {
+        // If parameter is null, return false.
+        if (ReferenceEquals(other, null)) return false;
+
+        // Optimization for a common success case.
+        if (ReferenceEquals(this, other)) return true;
+
+        // If run-time types are not exactly the same, return false.
+        if (GetType() != other.GetType()) return false;
+
+        // Return true if the fields match.
         return X == other.X && Y == other.Y;
+    }
+
+    public override int GetHashCode()
+    {
+        return X.GetHashCode() * 17 + Y.GetHashCode();
+    }
+
+    public static bool operator ==(Pos lhs, Pos rhs)
+    {
+        // Check for null on left side.
+        if (ReferenceEquals(lhs, null))
+        {
+            if (ReferenceEquals(rhs, null))
+            {
+                // null == null = true.
+                return true;
+            }
+
+            // Only the left side is null.
+            return false;
+        }
+
+        // Equals handles case of null on right side.
+        return lhs.Equals(rhs);
+    }
+
+    public static bool operator !=(Pos lhs, Pos rhs)
+    {
+        return !(lhs == rhs);
     }
 
     internal string ToCardinal(Pos currnetPos)
@@ -689,14 +814,154 @@ class Pos : IEquatable<Pos>
     }
 }
 
-class Sector
+public class Sector
 {
     public Pos MinPos { get; set; }
     public Pos MaxPos { get; set; }
 }
 
-enum Tile
+public enum Tile
 {
     Water,
     Island
+}
+
+public class AStarPathFiner
+{
+    Dictionary<Pos, bool> _closedSet = new Dictionary<Pos, bool>();
+    Dictionary<Pos, bool> _openSet = new Dictionary<Pos, bool>();
+
+    //cost of start to this key node
+    Dictionary<Pos, int> _gScore = new Dictionary<Pos, int>();
+    //cost of start to goal, passing through key node
+    Dictionary<Pos, int> _fScore = new Dictionary<Pos, int>();
+
+    Dictionary<Pos, Pos> _nodeLinks = new Dictionary<Pos, Pos>();
+
+    public List<Pos> FindPath(Map map, List<Pos> tail, Pos start, Pos goal)
+    {
+        _openSet[start] = true;
+        _gScore[start] = 0;
+        _fScore[start] = Heuristic(start, goal);
+        Stopwatch timer = new Stopwatch();
+        while (_openSet.Count > 0)
+        {
+            if (!timer.IsRunning)
+            {
+                timer.Start();
+            }
+            //Console.Error.WriteLine($"Duration {timer.ElapsedMilliseconds}ms.");
+            //Console.Error.WriteLine($"FindPath: {_openSet.Count}");
+            var current = NextBest();
+            if (current.Equals(goal))
+            {
+                return Reconstruct(current);
+            }
+
+            _openSet.Remove(current);
+            _closedSet[current] = true;
+
+            var neighbors = Neighbors(map, tail, current);
+            //Console.Error.WriteLine($"FindPath neighbors: {neighbors.Select(x => x.ToString()).Aggregate((a,b)=> a + " | " + b )}");
+
+            foreach (var neighbor in neighbors)
+            {
+
+                if (_closedSet.ContainsKey(neighbor))
+                    continue;
+
+                var projectedG = GetGScore(current) + 1;
+
+                if (!_openSet.ContainsKey(neighbor))
+                    _openSet[neighbor] = true;
+                else if (projectedG >= GetGScore(neighbor))
+                    continue;
+
+                //record it
+                _nodeLinks[neighbor] = current;
+                _gScore[neighbor] = projectedG;
+                _fScore[neighbor] = projectedG + Heuristic(neighbor, goal);
+
+            }
+        }
+
+        return new List<Pos>();
+    }
+
+    private int Heuristic(Pos start, Pos goal)
+    {
+        var dx = goal.X - start.X;
+        var dy = goal.Y - start.Y;
+        return Math.Abs(dx) + Math.Abs(dy);
+    }
+
+    private int GetGScore(Pos pt)
+    {
+        int score = int.MaxValue;
+        _gScore.TryGetValue(pt, out score);
+        return score;
+    }
+
+
+    private int GetFScore(Pos pt)
+    {
+        int score = int.MaxValue;
+        _fScore.TryGetValue(pt, out score);
+        return score;
+    }
+
+    public static IEnumerable<Pos> Neighbors(Map map, List<Pos> tail, Pos center)
+    {
+        //North
+        Pos pt = new Pos(center.X, center.Y + 1);
+        if (IsValidNeighbor(map, tail, pt))
+            yield return pt;
+        //East
+        pt = new Pos(center.X+1, center.Y);
+        if (IsValidNeighbor(map, tail, pt))
+            yield return pt;
+        //South
+        pt = new Pos(center.X, center.Y - 1);
+        if (IsValidNeighbor(map, tail, pt))
+            yield return pt;
+        //West
+        pt = new Pos(center.X - 1, center.Y);
+        if (IsValidNeighbor(map, tail, pt))
+            yield return pt;
+    }
+
+    public static bool IsValidNeighbor(Map map, List<Pos> tail, Pos pt)
+    {
+        return map.IsPosOnBoard(pt) && map.IsWaterTile(pt) && !tail.Contains(pt);
+    }
+
+    private List<Pos> Reconstruct(Pos current)
+    {
+        List<Pos> path = new List<Pos>();
+        while (_nodeLinks.ContainsKey(current))
+        {
+            path.Add(current);
+            current = _nodeLinks[current];
+        }
+
+        path.Reverse();
+        return path;
+    }
+
+    private Pos NextBest()
+    {
+        int best = int.MaxValue;
+        Pos bestPt = null;
+        foreach (var node in _openSet.Keys)
+        {
+            var score = GetFScore(node);
+            if (score < best)
+            {
+                bestPt = node;
+                best = score;
+            }
+        }
+
+        return bestPt;
+    }
 }

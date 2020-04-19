@@ -3,7 +3,9 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 15
 VisualStudioVersion = 15.0.28307.757
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EdocFoNaeco", "EdocFoNaeco\EdocFoNaeco.csproj", "{7446DE20-FB5C-4081-8773-D1717E3A50CC}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdocFoNaeco", "EdocFoNaeco\EdocFoNaeco.csproj", "{7446DE20-FB5C-4081-8773-D1717E3A50CC}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "UnitTestProject1", "UnitTestProject1\UnitTestProject1.csproj", "{D1139270-C271-46D8-AB32-C441A3969C1D}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -15,6 +17,10 @@ Global
 		{7446DE20-FB5C-4081-8773-D1717E3A50CC}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{7446DE20-FB5C-4081-8773-D1717E3A50CC}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{7446DE20-FB5C-4081-8773-D1717E3A50CC}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D1139270-C271-46D8-AB32-C441A3969C1D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D1139270-C271-46D8-AB32-C441A3969C1D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D1139270-C271-46D8-AB32-C441A3969C1D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D1139270-C271-46D8-AB32-C441A3969C1D}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

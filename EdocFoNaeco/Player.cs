@@ -1,17 +1,14 @@
 ﻿using System;
-using System.Linq;
-using System.IO;
-using System.Text;
-using System.Collections;
 using System.Collections.Generic;
-using System.Security.Cryptography;
 using System.Diagnostics;
+using System.Linq;
+using System.Text;
 
 /**
  * Auto-generated code below aims at helping you parse
  * the standard input according to the problem statement.
  **/
-class Player
+public class Player
 {
     public static Map map;
     public static List<Pos> tail = new List<Pos>();
@@ -21,6 +18,7 @@ class Player
     public static int? CurrentOppLife = null;
     public static Stopwatch Timer = new Stopwatch();
     public static Stopwatch Timer2 = new Stopwatch();
+    public static Random rand;
 
 
     static void Main(string[] args)
@@ -43,6 +41,7 @@ class Player
             map.PopulateMap(i, line);
         }
         Err(map.ToString());
+        rand = new Random(map.GetAllValidPos().Count());
         // Write an action using Console.WriteLine()
         // To debug: Console.Error.WriteLine("Debug messages...");
 
@@ -88,13 +87,13 @@ class Player
             ParseOpponentOrders(opponentOrders, out oppoenetCardinalMove, out surfaceSector, out enemyTorpedoPos, out enemySilencedMove);
             // Write an action using Console.WriteLine()
             // To debug: Console.Error.WriteLine("Debug messages...");
-            
+
             // Populate enemy tails
             PopulateEnemyTails(oppoenetCardinalMove, surfaceSector, enemyTorpedoPos, enemySilencedMove);
-            Err($"ENEMY TAILS ENDS {possibleEnemyTails.Select(t => t.Last().ToString()).Aggregate((a, b) => a + " | " + b)}");
+            if (possibleEnemyTails.Any()) Err($"ENEMY TAILS ENDS {possibleEnemyTails.Select(t => t.Last().ToString()).Aggregate((a, b) => a + " | " + b)}");
             TimerLogAndReset("PopulateEnemyTails");
 
-            Err((possibleEnemyTails.Count == 1) ? 
+            Err((possibleEnemyTails.Count == 1) ?
                 $"I KNOW THE ENEMY IS AT {possibleEnemyTails.First().Last()}." :
                 $"There are {possibleEnemyTails.Count} possible enemy tails left");
 
@@ -146,10 +145,7 @@ class Player
             TimerLogAndReset("FireTorpedoLogic");
 
             // Make my move
-            var validMoves = map.ValidMoves(new Pos(x, y));
-            //Err($"TAIL: {tail.Select(t => t.ToString()).Aggregate((a, b) => a + "| " + b)}");
-            //Err(validMoves.Select(m => m.ToString()).Aggregate((a, b) => a + "| " + b));
-            validMoves = validMoves.Where(m => !tail.Contains(m)).ToList();
+            List<Pos> validMoves = GetValidMoves(myPos);
             var fireTorpedoMessage = string.Empty;
             if (FireTorpedoAt != null)
             {
@@ -172,12 +168,13 @@ class Player
                     var path = pathFiner.FindPath(map, tail, myPos, possibleEnemyTails.First().Last());
                     move = path.FirstOrDefault();
 
-                    Err($"AStarPathFiner Path {path.Select(m => m.ToString()).Aggregate((a, b) => a + " | " + b)}");
+                    if (path.Any()) Err($"AStarPathFiner Path {path.Select(m => m.ToString()).Aggregate((a, b) => a + " | " + b)}");
                 }
-                else
+
+                if (move == null)
                 {
-                    Random rand = new Random();
-                    move = validMoves[rand.Next(validMoves.Count)];
+                    //move = validMoves[rand.Next(validMoves.Count)];
+                    move = Move(validMoves);
                 }
 
                 tail.Add(move);
@@ -189,6 +186,74 @@ class Player
             TimerLogAndReset("MakeMoveLogic");
             Err($"Turn exec time {Timer2.ElapsedMilliseconds}ms.");
         }
+    }
+
+    private static List<Pos> GetValidMoves(Pos pos)
+    {
+        return GetValidMoves(pos, tail);
+    }
+
+    private static List<Pos> GetValidMoves(Pos pos, List<Pos> tail)
+    {
+        var validMoves = map.ValidMoves(pos);
+        //Err($"TAIL: {tail.Select(t => t.ToString()).Aggregate((a, b) => a + "| " + b)}");
+        //Err(validMoves.Select(m => m.ToString()).Aggregate((a, b) => a + "| " + b));
+        validMoves = validMoves.Where(m => !tail.Contains(m)).ToList();
+        return validMoves;
+    }
+
+    private static Pos Move(List<Pos> validMoves)
+    {
+        Dictionary<Pos, int> movesAndScores = GetMoveScores(validMoves, 3, tail);
+
+        Err($"Move Best Moves: {movesAndScores.Select(m => $"P[{m.Key}] V:{m.Value} ").Aggregate((a, b) => a + b)}");
+
+        // Choose move based on score and previous direction.
+        var highestScore = movesAndScores.Max(m => m.Value);
+        var bestMoves = movesAndScores.Where(m => m.Value == highestScore);
+        if (bestMoves.Count() > 1 && tail.Count > 1)
+        {
+            var lastMoveDirection = GetMoveDirection(tail.Last(), tail.ElementAt(tail.Count - 2));
+            var futureMoveDirection = GetMoveDirection(bestMoves.First().Key, tail.Last());
+            if (lastMoveDirection == futureMoveDirection)
+            {
+                return bestMoves.Last().Key;
+            }
+        }
+        return bestMoves.First().Key;
+    }
+
+    private static Dictionary<Pos, int> GetMoveScores(List<Pos> validMoves, int depth, List<Pos> tail)
+    {
+        Dictionary<Pos, int> movesAndScores = new Dictionary<Pos, int>();
+        foreach (var move in validMoves)
+        {
+            var tempTail = tail.Select(x => x).ToList();
+            tempTail.Add(move);
+            var newValidMoves = GetValidMoves(move, tempTail);
+            movesAndScores[move] = newValidMoves.Count;
+            if (depth > 1)
+            {
+                var scores = GetMoveScores(newValidMoves, depth - 1, tempTail);
+                //if(scores.Count > 1) Err($"GetMoveScores Scores: {scores.Select(m => $"P[{m.Key}] V:{m.Value} ").Aggregate((a, b) => a + b)}");
+                var totalScore = scores.Sum(s => s.Value);
+                movesAndScores[move] += totalScore;
+            }
+        }
+
+        return movesAndScores;
+    }
+
+    private static string GetMoveDirection(Pos to, Pos from)
+    {
+        var directionX = from.X - to.X;
+        var directionY = from.Y - to.Y;
+        if (directionX > 0) return "W";
+        if (directionX < 0) return "E";
+        if (directionY > 0) return "N";
+        if (directionY < 0) return "S";
+
+        throw new Exception($"To: {to} & from: {from} are not valid to and from moves");
     }
 
     private static void PopulateEnemyTails(CardinalPos oppoenetCardinalMove, int surfaceSector, Pos torpedoPos, bool enemySilencedMove)
@@ -508,7 +573,7 @@ internal enum CardinalPos
     NA, N, E, S, W
 }
 
-class Map
+public class Map
 {
     public int Width { get; set; }
     public int Height { get; set; }
@@ -598,7 +663,7 @@ class Map
     {
         var waterTiles = GetAllValidPos().ToList();
 
-        Random rand = new Random();
+        Random rand = new Random(waterTiles.Count);
         return waterTiles[rand.Next(waterTiles.Count)];
     }
 
@@ -666,7 +731,7 @@ class Map
     }
 }
 
-class Pos : IEquatable<Pos>
+public class Pos : IEquatable<Pos>
 {
     public Pos(int x, int y)
     {
@@ -689,9 +754,53 @@ class Pos : IEquatable<Pos>
         return $"{X} {Y}";
     }
 
+    public override bool Equals(object obj)
+    {
+        return Equals(obj as Pos);
+    }
+
     public bool Equals(Pos other)
     {
+        // If parameter is null, return false.
+        if (ReferenceEquals(other, null)) return false;
+
+        // Optimization for a common success case.
+        if (ReferenceEquals(this, other)) return true;
+
+        // If run-time types are not exactly the same, return false.
+        if (GetType() != other.GetType()) return false;
+
+        // Return true if the fields match.
         return X == other.X && Y == other.Y;
+    }
+
+    public override int GetHashCode()
+    {
+        return X.GetHashCode() * 17 + Y.GetHashCode();
+    }
+
+    public static bool operator ==(Pos lhs, Pos rhs)
+    {
+        // Check for null on left side.
+        if (ReferenceEquals(lhs, null))
+        {
+            if (ReferenceEquals(rhs, null))
+            {
+                // null == null = true.
+                return true;
+            }
+
+            // Only the left side is null.
+            return false;
+        }
+
+        // Equals handles case of null on right side.
+        return lhs.Equals(rhs);
+    }
+
+    public static bool operator !=(Pos lhs, Pos rhs)
+    {
+        return !(lhs == rhs);
     }
 
     internal string ToCardinal(Pos currnetPos)
@@ -705,19 +814,19 @@ class Pos : IEquatable<Pos>
     }
 }
 
-class Sector
+public class Sector
 {
     public Pos MinPos { get; set; }
     public Pos MaxPos { get; set; }
 }
 
-enum Tile
+public enum Tile
 {
     Water,
     Island
 }
 
-class AStarPathFiner
+public class AStarPathFiner
 {
     Dictionary<Pos, bool> _closedSet = new Dictionary<Pos, bool>();
     Dictionary<Pos, bool> _openSet = new Dictionary<Pos, bool>();
@@ -741,8 +850,8 @@ class AStarPathFiner
             {
                 timer.Start();
             }
-            Console.Error.WriteLine($"Duration {timer.ElapsedMilliseconds}ms.");
-            Console.Error.WriteLine($"FindPath: {_openSet.Count}");
+            //Console.Error.WriteLine($"Duration {timer.ElapsedMilliseconds}ms.");
+            //Console.Error.WriteLine($"FindPath: {_openSet.Count}");
             var current = NextBest();
             if (current.Equals(goal))
             {
@@ -753,7 +862,7 @@ class AStarPathFiner
             _closedSet[current] = true;
 
             var neighbors = Neighbors(map, tail, current);
-            Console.Error.WriteLine($"FindPath neighbors: {neighbors.Select(x => x.ToString()).Aggregate((a,b)=> a + " | " + b )}");
+            //Console.Error.WriteLine($"FindPath neighbors: {neighbors.Select(x => x.ToString()).Aggregate((a,b)=> a + " | " + b )}");
 
             foreach (var neighbor in neighbors)
             {
@@ -855,5 +964,4 @@ class AStarPathFiner
 
         return bestPt;
     }
-
 }

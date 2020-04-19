@@ -10,6 +10,12 @@ using System.Text;
  **/
 public class Player
 {
+    const string MOVE = "MOVE ";
+    const string SURFACE = "SURFACE ";
+    const string TORPEDO = "TORPEDO ";
+    const string SEPARATOR = "|";
+    const string SILENCE = "SILENCE";
+
     public static Map map;
     public static List<Pos> tail = new List<Pos>();
     public static List<List<Pos>> possibleEnemyTails = new List<List<Pos>>();
@@ -81,15 +87,16 @@ public class Player
             int surfaceSector;
             Pos enemyTorpedoPos;
             bool enemySilencedMove;
+            List<string> comandOrder;
 
             TimerLogAndReset("ReadAllInput");
 
-            ParseOpponentOrders(opponentOrders, out oppoenetCardinalMove, out surfaceSector, out enemyTorpedoPos, out enemySilencedMove);
+            ParseOpponentOrders(opponentOrders, out oppoenetCardinalMove, out surfaceSector, out enemyTorpedoPos, out enemySilencedMove, out comandOrder);
             // Write an action using Console.WriteLine()
             // To debug: Console.Error.WriteLine("Debug messages...");
 
             // Populate enemy tails
-            PopulateEnemyTails(oppoenetCardinalMove, surfaceSector, enemyTorpedoPos, enemySilencedMove);
+            PopulateEnemyTails(oppoenetCardinalMove, surfaceSector, enemyTorpedoPos, enemySilencedMove, comandOrder);
             if (possibleEnemyTails.Any()) Err($"ENEMY TAILS ENDS {possibleEnemyTails.Select(t => t.Last().ToString()).Aggregate((a, b) => a + " | " + b)}");
             TimerLogAndReset("PopulateEnemyTails");
 
@@ -256,7 +263,7 @@ public class Player
         throw new Exception($"To: {to} & from: {from} are not valid to and from moves");
     }
 
-    private static void PopulateEnemyTails(CardinalPos oppoenetCardinalMove, int surfaceSector, Pos torpedoPos, bool enemySilencedMove)
+    private static void PopulateEnemyTails(CardinalPos oppoenetCardinalMove, int surfaceSector, Pos torpedoPos, bool enemySilencedMove, List<string> comandOrder)
     {
         if (enemySilencedMove)
         {
@@ -267,7 +274,7 @@ public class Player
                 var silenceRance = GetSilenceRange(lastPos, tail);
                 foreach (var pos in silenceRance)
                 {
-                    if(!newTails.Where(p => p.Last() == pos).Any())
+                    if (!newTails.Where(p => p.Last() == pos).Any())
                     {
                         var newTail = tail.Select(x => x).ToList(); //copy tail
                         newTail.Add(pos);
@@ -285,20 +292,42 @@ public class Player
             //Err($"After Surface there are: {possibleEnemyTails.Count()} left");
         }
 
-        if (torpedoPos != null)
+        FilterEnemyTailsByMyTorpedoHit(surfaceSector);
+
+        if (comandOrder.IndexOf(MOVE) > comandOrder.IndexOf(TORPEDO)) //Fired 1st then moved
         {
-            List<Pos> torpedoRange = GetTorpedoRange(torpedoPos);
-            //Err($"torpedoRange: {torpedoRange.Select(t => t.ToString()).Aggregate((a, b) => a + "| " + b)}");
-            //remove all tails that have the last position outside the torpedo range 
-            possibleEnemyTails.RemoveAll(t => !torpedoRange.Contains(t.Last()));
-            //Err($"After torpedoPos there are: {possibleEnemyTails.Count()} left");
-
+            Err($"Fired 1st then moved. IndexOf(MOVE): {comandOrder.IndexOf(MOVE)}, IndexOf(TORPEDO): {comandOrder.IndexOf(TORPEDO)}");
+            FilterEnemyTailsByTorpedoFireRange(torpedoPos);
+            AddMoveToEnemyTails(oppoenetCardinalMove);
         }
+        else // Moved 1st the Fired.
+        {
+            Err($"Moved 1st the Fired. IndexOf(MOVE): {comandOrder.IndexOf(MOVE)}, IndexOf(TORPEDO): {comandOrder.IndexOf(TORPEDO)}");
+            AddMoveToEnemyTails(oppoenetCardinalMove);
+            FilterEnemyTailsByTorpedoFireRange(torpedoPos);
+        }
+    }
 
+    private static void FilterEnemyTailsByMyTorpedoHit(int surfaceSector)
+    {
         // I fired a torpedo, I should have hit one of these. If I did remove all other options. If I didn't remove these options.
         if (PossibleEnemiesHit != null)
         {
-            if (CurrentOppLife != null && PreviousTurnOppLife != null && PreviousTurnOppLife != CurrentOppLife)
+            var enemyWasDamaged = CurrentOppLife != null && PreviousTurnOppLife != null && PreviousTurnOppLife != CurrentOppLife;
+            bool IDamagedEnemy = false;
+            if (enemyWasDamaged)
+            {
+                if (surfaceSector > 0)
+                {
+                    IDamagedEnemy = PreviousTurnOppLife - CurrentOppLife > 1; // surfaced and was hit
+                }
+                else
+                {
+                    IDamagedEnemy = enemyWasDamaged;
+                }
+            }
+
+            if (IDamagedEnemy)
             {
                 possibleEnemyTails.RemoveAll(t => !PossibleEnemiesHit.Contains(t.Last()));
             }
@@ -308,11 +337,11 @@ public class Player
             }
             PossibleEnemiesHit = null;
             //Err($"After PossibleEnemiesHit there are: {possibleEnemyTails.Count()} left");
-
         }
+    }
 
-        if (oppoenetCardinalMove == CardinalPos.NA) return;
-
+    private static void AddMoveToEnemyTails(CardinalPos oppoenetCardinalMove)
+    {
         foreach (var tail in possibleEnemyTails)
         {
             var lastMove = tail.Last();
@@ -345,7 +374,23 @@ public class Player
 
         possibleEnemyTails.RemoveAll(x => x.Count == 0);
         //Err($"After EnemyMOve there are: {possibleEnemyTails.Count()} left");
+    }
 
+    private static void FilterEnemyTailsByTorpedoFireRange(Pos torpedoPos)
+    {
+        if (torpedoPos != null)
+        {
+            List<Pos> torpedoRange = GetTorpedoRange(torpedoPos);
+            Err($"torpedoRange: {torpedoRange.Select(t => t.ToString()).Aggregate((a, b) => a + " | " + b)}");
+            //remove all tails that have the last position outside the torpedo range 
+
+            possibleEnemyTails.RemoveAll(t =>
+            {
+                Err($"Last Enemy Tail: {t.Last()} is contained? {torpedoRange.Contains(t.Last())}");
+                return !torpedoRange.Contains(t.Last());
+            });
+            Err($"After torpedoPos there are: {possibleEnemyTails.Count()} left");
+        }
     }
 
     private static List<Pos> GetSilenceRange(Pos lastPos, List<Pos> tail)
@@ -411,7 +456,6 @@ public class Player
             if (i == 0)
             {
                 torpedoRange.Add(new Pos(minPos.X, torpedoPos.Y));
-
                 torpedoRange.Add(new Pos(maxPos.X, torpedoPos.Y));
             }
 
@@ -466,9 +510,10 @@ public class Player
                 torpedoRange.Add(new Pos(minPos.X + i, torpedoPos.Y - 3));
                 torpedoRange.Add(new Pos(minPos.X + i, torpedoPos.Y - 2));
                 torpedoRange.Add(new Pos(minPos.X + i, torpedoPos.Y - 1));
+                torpedoRange.Add(new Pos(minPos.X + i, torpedoPos.Y));
                 torpedoRange.Add(new Pos(minPos.X + i, torpedoPos.Y + 1));
                 torpedoRange.Add(new Pos(minPos.X + i, torpedoPos.Y + 2));
-                torpedoRange.Add(new Pos(minPos.X + i, torpedoPos.Y - 3));
+                torpedoRange.Add(new Pos(minPos.X + i, torpedoPos.Y + 3));
                 torpedoRange.Add(new Pos(minPos.X + i, torpedoPos.Y + 4));
             }
         }
@@ -496,13 +541,26 @@ public class Player
     }
 
     private static void ParseOpponentOrders(string opponentOrders, out CardinalPos oppoenetCardinalMove, 
-        out int surfaceSector, out Pos torpedoPos, out bool silence)
+        out int surfaceSector, out Pos torpedoPos, out bool silence, out List<string> comandOrder)
     {
-        const string MOVE = "MOVE ";
-        const string SURFACE = "SURFACE ";
-        const string TORPEDO = "TORPEDO ";
-        const string SEPARATOR = "|";
-        const string SILENCE = "SILENCE";
+        
+
+        Err($"opponentOrders: {opponentOrders}");
+
+        comandOrder = new List<string>();
+        var moveOrderIndex = opponentOrders.IndexOf(MOVE);
+        var torepedoOrderIndex = opponentOrders.IndexOf(TORPEDO);
+
+        if (moveOrderIndex > torepedoOrderIndex)
+        {
+            comandOrder.Add(TORPEDO);
+            comandOrder.Add(MOVE);
+        }
+        else
+        {
+            comandOrder.Add(MOVE);
+            comandOrder.Add(TORPEDO);
+        }
 
         oppoenetCardinalMove = CardinalPos.NA;
         surfaceSector = 0;
@@ -552,6 +610,8 @@ public class Player
             //Err(stringPos);
             torpedoPos = new Pos(stringPos);
         }
+
+
 
         TimerLogAndReset("ParseOpponentOrders");
     }

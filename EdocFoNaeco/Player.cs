@@ -25,6 +25,10 @@ public class Player
     public static Stopwatch Timer = new Stopwatch();
     public static Stopwatch Timer2 = new Stopwatch();
     public static Random rand;
+    public static string myLastOrders = null;
+    public static Pos myLastTorpedoFire;
+    public static bool usedSilenceLastMove;
+    public static bool shouldFireFirst = false;
 
 
     static void Main(string[] args)
@@ -83,19 +87,21 @@ public class Player
             //Err(sonarResult);
             string opponentOrders = Console.ReadLine(); // MOVE N |TORPEDO 3 5
             //Err($"opponentOrders are: {opponentOrders}");
-            CardinalPos oppoenetCardinalMove;
-            int surfaceSector;
-            Pos enemyTorpedoPos;
-            bool enemySilencedMove;
-            List<string> comandOrder;
+            CardinalPos oppoenetCardinalMove, myCardinalMove;
+            int surfaceSector, mySurfaceSector;
+            Pos enemyTorpedoPos, myTorpedoPos;
+            bool enemySilencedMove, mySilencedMove;
+            List<string> comandOrder, myCommandOrder;
 
             TimerLogAndReset("ReadAllInput");
 
             ParseOpponentOrders(opponentOrders, out oppoenetCardinalMove, out surfaceSector, out enemyTorpedoPos, out enemySilencedMove, out comandOrder);
+            //ParseOpponentOrders(myLastOrders, out myCardinalMove, out mySurfaceSector, out myTorpedoPos, out mySilencedMove, out myCommandOrder);
             // Write an action using Console.WriteLine()
             // To debug: Console.Error.WriteLine("Debug messages...");
 
             // Populate enemy tails
+            PopulateMyPossibleTails(tail.Last().ToCardinal(tail.Last()), map.GetPosSector(tail.Last()), myLastTorpedoFire, usedSilenceLastMove, shouldFireFirst);
             PopulateEnemyTails(oppoenetCardinalMove, surfaceSector, enemyTorpedoPos, enemySilencedMove, comandOrder);
             if (possibleEnemyTails.Any()) Err($"ENEMY TAILS ENDS {possibleEnemyTails.Select(t => t.Last().ToString()).Aggregate((a, b) => a + " | " + b)}");
             TimerLogAndReset("PopulateEnemyTails");
@@ -108,7 +114,9 @@ public class Player
 
             Pos nextMove = NextMove(myPos, validMoves);
             // Fire Torpedo
-            Pos FireTorpedoAt = FireTorpedo(myPos, torpedoCooldown, nextMove);
+            
+            Pos FireTorpedoAt = FireTorpedo(myPos, torpedoCooldown, nextMove, out shouldFireFirst);
+            myLastTorpedoFire = FireTorpedoAt;
 
             var fireTorpedoMessage = string.Empty;
             if (FireTorpedoAt != null)
@@ -118,15 +126,18 @@ public class Player
 
             if (!validMoves.Any())
             {
-                Console.WriteLine($"{fireTorpedoMessage}SURFACE"); // CAN I ALSO MOVE? 
+                myLastOrders = $"{fireTorpedoMessage}SURFACE";
+                Console.WriteLine(myLastOrders); // CAN I ALSO MOVE? 
                 tail = new List<Pos>();
-                tail.Add(new Pos(x, y));
+                tail.Add(myPos);
             }
             else
             {
+                var power = possibleEnemyTails.Count != 1 && silenceCooldown != 0 ? "SILENCE" : "TORPEDO";
                 
-                var cardinal = nextMove.ToCardinal(new Pos(x, y));
-                Console.WriteLine($"{fireTorpedoMessage}MOVE {cardinal} TORPEDO");
+                var cardinal = nextMove.ToCardinal(myPos);
+                myLastOrders = shouldFireFirst ? $"{fireTorpedoMessage}MOVE {cardinal} {power}" : $"MOVE {cardinal} {power}|{fireTorpedoMessage}";
+                Console.WriteLine(myLastOrders);
             }
 
             PreviousTurnOppLife = CurrentOppLife;
@@ -158,9 +169,10 @@ public class Player
         return move;
     }
 
-    private static Pos FireTorpedo(Pos myPos, int torpedoCooldown, Pos nextMove)
+    private static Pos FireTorpedo(Pos myPos, int torpedoCooldown, Pos nextMove, out bool shouldFireFirst)
     {
         Pos FireTorpedoAt = null;
+        shouldFireFirst = true;
         if (torpedoCooldown == 0)
         {
             var torpedoRange = GetTorpedoRange(myPos);
@@ -174,6 +186,7 @@ public class Player
                 {
                     var torpedoRangeNextMove = GetTorpedoRange(nextMove);
                     FireTorpedoAt = (torpedoRangeNextMove.Contains(enemyLocation)) ? enemyLocation : null;
+                    shouldFireFirst = FireTorpedoAt == null;
                 }
             }
 
@@ -315,6 +328,11 @@ public class Player
             AddMoveToEnemyTails(oppoenetCardinalMove);
             FilterEnemyTailsByTorpedoFireRange(torpedoPos);
         }
+    }
+
+    private static void PopulateMyPossibleTails(CardinalPos cardinalPos, int v, Pos myLastTorpedoFire, bool usedSilenceLastMove, bool shouldFireFirst)
+    {
+        throw new NotImplementedException();
     }
 
     private static void FilterEnemyTailsByMyTorpedoHit(int surfaceSector)
@@ -497,8 +515,6 @@ public class Player
     private static void ParseOpponentOrders(string opponentOrders, out CardinalPos oppoenetCardinalMove, 
         out int surfaceSector, out Pos torpedoPos, out bool silence, out List<string> comandOrder)
     {
-        
-
         Err($"opponentOrders: {opponentOrders}");
 
         comandOrder = new List<string>();
@@ -564,8 +580,6 @@ public class Player
             //Err(stringPos);
             torpedoPos = new Pos(stringPos);
         }
-
-
 
         TimerLogAndReset("ParseOpponentOrders");
     }
@@ -743,6 +757,20 @@ public class Map
     {
         return Sectors[sectorNumber - 1];
     }
+
+    internal int GetPosSector(Pos pos)
+    {
+        for(var i = 0; i < Sectors.Count; i++)
+        {
+            var sector = Sectors[i];
+            if (pos.X >= sector.MinPos.X && pos.X <= sector.MaxPos.X &&
+                pos.Y >= sector.MinPos.Y && pos.Y <= sector.MaxPos.Y)
+            {
+                return i + 1;
+            }
+        }
+        return 0;
+    }
 }
 
 public class Pos : IEquatable<Pos>
@@ -817,12 +845,12 @@ public class Pos : IEquatable<Pos>
         return !(lhs == rhs);
     }
 
-    internal string ToCardinal(Pos currnetPos)
+    internal CardinalPos ToCardinal(Pos currnetPos)
     {
-        if (currnetPos.Y - 1 == Y && currnetPos.X == X) return "N";
-        if (currnetPos.X + 1 == X && currnetPos.Y == Y) return "E";
-        if (currnetPos.Y + 1 == Y && currnetPos.X == X) return "S";
-        if (currnetPos.X - 1 == X && currnetPos.Y == Y) return "W";
+        if (currnetPos.Y - 1 == Y && currnetPos.X == X) return CardinalPos.N;
+        if (currnetPos.X + 1 == X && currnetPos.Y == Y) return CardinalPos.E;
+        if (currnetPos.Y + 1 == Y && currnetPos.X == X) return CardinalPos.S;
+        if (currnetPos.X - 1 == X && currnetPos.Y == Y) return CardinalPos.W;
 
         throw new Exception($"ToCardinal count not be calculated for {this} with currentPos {currnetPos}");
     }
